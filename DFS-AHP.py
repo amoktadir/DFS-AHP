@@ -6,17 +6,30 @@ from typing import List, Tuple, Dict
 
 class DecomposedFuzzyAHP:
     def __init__(self):
-        self.linguistic_scale = {
-            # Optimistic linguistic terms
-            'EEI': {'O': (0.50, 0.50), 'P': (0.50, 0.50), 'Saaty': 1},
-            'SMI': {'O': (0.55, 0.45), 'P': (0.45, 0.55), 'Saaty': 2},
-            'WMI': {'O': (0.60, 0.40), 'P': (0.40, 0.60), 'Saaty': 3},
-            'MI': {'O': (0.65, 0.35), 'P': (0.35, 0.65), 'Saaty': 4},
-            'SMM': {'O': (0.70, 0.30), 'P': (0.30, 0.70), 'Saaty': 5},
-            'VSI': {'O': (0.75, 0.25), 'P': (0.25, 0.75), 'Saaty': 6},
-            'AMI': {'O': (0.80, 0.20), 'P': (0.20, 0.80), 'Saaty': 7},
-            'PMI': {'O': (0.85, 0.15), 'P': (0.15, 0.85), 'Saaty': 8},
-            'EMI': {'O': (0.90, 0.10), 'P': (0.10, 0.90), 'Saaty': 9}
+        # Optimistic linguistic scale (for "How much more important is A than B?")
+        self.optimistic_scale = {
+            'Exactly Equal Importance (EEI)': {'O': (0.50, 0.50), 'Saaty': 1},
+            'Slightly More Important (SMI)': {'O': (0.55, 0.45), 'Saaty': 2},
+            'Weakly More Important (WMI)': {'O': (0.60, 0.40), 'Saaty': 3},
+            'More Important (MI)': {'O': (0.65, 0.35), 'Saaty': 4},
+            'Strongly More Important (SMM)': {'O': (0.70, 0.30), 'Saaty': 5},
+            'Very Strongly More Important (VSI)': {'O': (0.75, 0.25), 'Saaty': 6},
+            'Absolutely More Important (AMI)': {'O': (0.80, 0.20), 'Saaty': 7},
+            'Perfectly More Important (PMI)': {'O': (0.85, 0.15), 'Saaty': 8},
+            'Exactly More Important (EMI)': {'O': (0.90, 0.10), 'Saaty': 9}
+        }
+        
+        # Pessimistic linguistic scale (for "How much more unimportant is B than A?")
+        self.pessimistic_scale = {
+            'Exactly Equal Unimportant (EEU)': {'P': (0.50, 0.50), 'Saaty': 1},
+            'Slightly Equal Unimportant (SEU)': {'P': (0.45, 0.55), 'Saaty': 2},
+            'Weakly More Unimportant (WMIU)': {'P': (0.40, 0.60), 'Saaty': 3},
+            'More Unimportant (MIU)': {'P': (0.35, 0.65), 'Saaty': 4},
+            'Strongly More Unimportant (SMU)': {'P': (0.30, 0.70), 'Saaty': 5},
+            'Very Strongly More Unimportant (VSU)': {'P': (0.25, 0.75), 'Saaty': 6},
+            'Absolutely More Unimportant (AMU)': {'P': (0.20, 0.80), 'Saaty': 7},
+            'Perfectly More Unimportant (PMU)': {'P': (0.15, 0.85), 'Saaty': 8},
+            'Exactly More Unimportant (EMU)': {'P': (0.10, 0.90), 'Saaty': 9}
         }
         
         self.scale_multiplier = 0.90  # k value from the paper
@@ -24,9 +37,24 @@ class DecomposedFuzzyAHP:
     def linguistic_to_dfn(self, optimistic_term: str, pessimistic_term: str) -> Dict:
         """Convert linguistic terms to decomposed fuzzy numbers"""
         return {
-            'O': self.linguistic_scale[optimistic_term]['O'],
-            'P': self.linguistic_scale[pessimistic_term]['P']
+            'O': self.optimistic_scale[optimistic_term]['O'],
+            'P': self.pessimistic_scale[pessimistic_term]['P']
         }
+
+    def get_reciprocal_pessimistic_term(self, optimistic_term: str) -> str:
+        """Get the corresponding pessimistic term for a given optimistic term"""
+        mapping = {
+            'Exactly Equal Importance (EEI)': 'Exactly Equal Unimportant (EEU)',
+            'Slightly More Important (SMI)': 'Slightly Equal Unimportant (SEU)',
+            'Weakly More Important (WMI)': 'Weakly More Unimportant (WMIU)',
+            'More Important (MI)': 'More Unimportant (MIU)',
+            'Strongly More Important (SMM)': 'Strongly More Unimportant (SMU)',
+            'Very Strongly More Important (VSI)': 'Very Strongly More Unimportant (VSU)',
+            'Absolutely More Important (AMI)': 'Absolutely More Unimportant (AMU)',
+            'Perfectly More Important (PMI)': 'Perfectly More Unimportant (PMU)',
+            'Exactly More Important (EMI)': 'Exactly More Unimportant (EMU)'
+        }
+        return mapping.get(optimistic_term, 'Exactly Equal Unimportant (EEU)')
 
     def consistency_index(self, dfn: Dict) -> float:
         """Calculate consistency index for a decomposed fuzzy number"""
@@ -95,33 +123,70 @@ class DecomposedFuzzyAHP:
         
         return {'O': (a_result, b_result), 'P': (c_result, d_result)}
 
-    def calculate_weights(self, comparison_matrices: List[List[Dict]]) -> List[float]:
-        """Calculate final weights from comparison matrices"""
-        aggregated_weights = []
+    def calculate_eigenvector(self, comparison_matrix: List[List[Dict]]) -> List[float]:
+        """Calculate eigenvector weights from comparison matrix"""
+        n = len(comparison_matrix)
         
-        for matrix in comparison_matrices:
-            # Aggregate each column using DWGM
-            n = len(matrix)
+        # Step 1: Aggregate each column using DWGM
+        aggregated_dfns = []
+        weights = [1/n] * n
+        
+        for j in range(n):
+            column_dfns = [comparison_matrix[i][j] for i in range(n)]
+            aggregated_dfns.append(self.dwgm_operator(column_dfns, weights))
+        
+        # Step 2: Calculate score indices for aggregated DFNs
+        scores = [self.score_index(dfn) for dfn in aggregated_dfns]
+        
+        # Step 3: Normalize scores to get weights
+        total_score = sum(scores)
+        if total_score > 0:
+            weights = [score / total_score for score in scores]
+        else:
             weights = [1/n] * n
-            aggregated_dfns = []
-            
-            for j in range(n):
-                column_dfns = [matrix[i][j] for i in range(n)]
-                aggregated_dfns.append(self.dwgm_operator(column_dfns, weights))
-            
-            # Calculate score indices for aggregated DFNs
-            scores = [self.score_index(dfn) for dfn in aggregated_dfns]
-            
-            # Normalize scores
-            total_score = sum(scores)
-            if total_score > 0:
-                normalized_weights = [score / total_score for score in scores]
-            else:
-                normalized_weights = [1/len(scores)] * len(scores)
-            
-            aggregated_weights.append(normalized_weights)
         
-        return aggregated_weights
+        return weights
+
+    def calculate_consistency_ratio(self, comparison_matrix: List[List[Dict]], weights: List[float]) -> float:
+        """Calculate consistency ratio (simplified version)"""
+        n = len(comparison_matrix)
+        
+        # Convert DF-AHP matrix to Saaty-like matrix for consistency check
+        saaty_matrix = []
+        for i in range(n):
+            row = []
+            for j in range(n):
+                if i == j:
+                    row.append(1.0)
+                else:
+                    # Use the optimistic Saaty value
+                    opt_term = None
+                    for term, values in self.optimistic_scale.items():
+                        if values['O'] == comparison_matrix[i][j]['O']:
+                            opt_term = term
+                            break
+                    if opt_term:
+                        row.append(self.optimistic_scale[opt_term]['Saaty'])
+                    else:
+                        row.append(1.0)
+            saaty_matrix.append(row)
+        
+        # Calculate consistency (simplified)
+        lambda_max = 0
+        for i in range(n):
+            row_sum = 0
+            for j in range(n):
+                row_sum += saaty_matrix[i][j] * weights[j]
+            lambda_max += row_sum / weights[i]
+        
+        lambda_max = lambda_max / n
+        CI = (lambda_max - n) / (n - 1) if n > 1 else 0
+        
+        # Random Index values (for n up to 10)
+        RI = {1: 0, 2: 0, 3: 0.58, 4: 0.90, 5: 1.12, 6: 1.24, 7: 1.32, 8: 1.41, 9: 1.45, 10: 1.49}
+        
+        CR = CI / RI.get(n, 1.0) if RI.get(n, 1.0) > 0 else 0
+        return CR
 
 def main():
     st.set_page_config(page_title="DF-AHP Decision Support System", layout="wide")
@@ -151,264 +216,259 @@ def main():
         
         ### Key Features:
         - **Optimistic and Pessimistic Views**: Considers both positive and negative perspectives
-        - **Reciprocal Judgments**: Handles functional and dysfunctional questions
+        - **Reciprocal Judgments**: Automatically handles reciprocal questions like traditional AHP
         - **Fuzzy Logic**: Manages uncertainty in expert judgments
         - **Consistency Measurement**: Evaluates decision maker consistency
         
-        ### Linguistic Scale:
-        The method uses a 9-point scale ranging from "Exactly Equal Importance" to "Exactly More Important" 
-        for both optimistic and pessimistic judgments.
+        ### How it works:
+        1. Define your criteria
+        2. For each pair, provide optimistic judgment (how much more important A is than B)
+        3. Pessimistic judgment is automatically calculated (how much more unimportant B is than A)
+        4. Get weighted results with consistency check
         """)
         
-        # Display linguistic scale
-        scale_data = []
-        for term, values in df_ahp.linguistic_scale.items():
-            scale_data.append({
-                'Optimistic Term': term,
-                'O(μ,ϑ)': f"({values['O'][0]}, {values['O'][1]})",
-                'Pessimistic Term': term.replace('I', 'U') if 'I' in term else term,
-                'P(μ,ϑ)': f"({values['P'][0]}, {values['P'][1]})",
-                'Saaty Scale': values['Saaty']
-            })
-        
-        st.subheader("Linguistic Scale Table")
-        st.dataframe(pd.DataFrame(scale_data))
-    
-    elif app_mode == "Criteria Setup":
-        st.header("Define Criteria Hierarchy")
-        
+        # Display linguistic scales
         col1, col2 = st.columns(2)
         
         with col1:
-            st.subheader("Main Criteria")
-            num_main_criteria = st.number_input(
-                "Number of main criteria", 
-                min_value=2, max_value=10, value=4
-            )
-            
-            main_criteria = []
-            for i in range(num_main_criteria):
-                criterion = st.text_input(
-                    f"Main criterion {i+1}", 
-                    value=f"Criterion {i+1}"
-                )
-                main_criteria.append(criterion)
+            st.subheader("Optimistic Scale")
+            opt_data = []
+            for term, values in df_ahp.optimistic_scale.items():
+                opt_data.append({
+                    'Term': term,
+                    'O(μ,ϑ)': f"({values['O'][0]}, {values['O'][1]})",
+                    'Saaty Scale': values['Saaty']
+                })
+            st.dataframe(pd.DataFrame(opt_data))
         
         with col2:
-            st.subheader("Sub-criteria")
-            num_sub_criteria = st.number_input(
-                "Number of sub-criteria per main criterion",
-                min_value=1, max_value=10, value=3
+            st.subheader("Pessimistic Scale")
+            pes_data = []
+            for term, values in df_ahp.pessimistic_scale.items():
+                pes_data.append({
+                    'Term': term,
+                    'P(μ,ϑ)': f"({values['P'][0]}, {values['P'][1]})",
+                    'Saaty Scale': values['Saaty']
+                })
+            st.dataframe(pd.DataFrame(pes_data))
+    
+    elif app_mode == "Criteria Setup":
+        st.header("Define Criteria")
+        
+        st.subheader("Main Criteria")
+        num_criteria = st.number_input(
+            "Number of criteria", 
+            min_value=2, max_value=10, value=4
+        )
+        
+        criteria = []
+        for i in range(num_criteria):
+            criterion = st.text_input(
+                f"Criterion {i+1}", 
+                value=f"Criterion {i+1}"
             )
-            
-            sub_criteria = {}
-            for i, main_crit in enumerate(main_criteria):
-                st.write(f"**{main_crit}**")
-                sub_crit_list = []
-                for j in range(num_sub_criteria):
-                    sub_crit = st.text_input(
-                        f"Sub-criterion {j+1} for {main_crit}",
-                        value=f"{main_crit}.{j+1}",
-                        key=f"sub_{i}_{j}"
-                    )
-                    sub_crit_list.append(sub_crit)
-                sub_criteria[main_crit] = sub_crit_list
+            if criterion:
+                criteria.append(criterion)
         
         # Store in session state
-        st.session_state.main_criteria = main_criteria
-        st.session_state.sub_criteria = sub_criteria
-        
-        if st.button("Save Criteria Hierarchy"):
-            st.success("Criteria hierarchy saved successfully!")
-            st.write("You can now proceed to pairwise comparisons.")
+        if st.button("Save Criteria"):
+            if len(criteria) >= 2:
+                st.session_state.criteria = criteria
+                st.success(f"Criteria saved successfully! {len(criteria)} criteria defined.")
+            else:
+                st.error("Please define at least 2 criteria.")
     
     elif app_mode == "Pairwise Comparisons":
         st.header("Pairwise Comparisons")
         
-        if 'main_criteria' not in st.session_state:
-            st.warning("Please set up your criteria hierarchy first in the 'Criteria Setup' section.")
+        if 'criteria' not in st.session_state:
+            st.warning("Please set up your criteria first in the 'Criteria Setup' section.")
             return
         
-        main_criteria = st.session_state.main_criteria
-        sub_criteria = st.session_state.sub_criteria
+        criteria = st.session_state.criteria
+        n = len(criteria)
         
-        st.subheader("Main Criteria Comparisons")
-        st.info("For each pair, select the optimistic and pessimistic linguistic terms")
+        st.markdown("""
+        ### Instructions:
+        - For each pair of criteria, select how much more important the row criterion is compared to the column criterion
+        - The pessimistic judgment (reciprocal) will be automatically calculated
+        - Only provide judgments for the upper triangular part (above diagonal)
+        """)
         
-        # Main criteria comparison matrix
-        main_comparisons = []
-        linguistic_terms = list(df_ahp.linguistic_scale.keys())
+        # Initialize comparison matrix in session state if not exists
+        if 'comparison_matrix' not in st.session_state:
+            st.session_state.comparison_matrix = [[None for _ in range(n)] for _ in range(n)]
         
-        for i, crit1 in enumerate(main_criteria):
-            row_comparisons = []
-            for j, crit2 in enumerate(main_criteria):
+        optimistic_terms = list(df_ahp.optimistic_scale.keys())
+        
+        # Create pairwise comparison matrix input
+        st.subheader("Pairwise Comparison Matrix")
+        
+        # Display criteria labels
+        cols = st.columns(n + 1)
+        cols[0].write("**Criteria**")
+        for j, crit in enumerate(criteria):
+            cols[j + 1].write(f"**{crit}**")
+        
+        # Matrix input
+        comparison_matrix = [[None for _ in range(n)] for _ in range(n)]
+        
+        for i, crit_i in enumerate(criteria):
+            cols = st.columns(n + 1)
+            cols[0].write(f"**{crit_i}**")
+            
+            for j, crit_j in enumerate(criteria):
                 if i == j:
-                    # Diagonal elements are exactly equal
-                    dfn = df_ahp.linguistic_to_dfn('EEI', 'EEI')
-                    row_comparisons.append(dfn)
+                    # Diagonal - exactly equal
+                    comparison_matrix[i][j] = df_ahp.linguistic_to_dfn(
+                        'Exactly Equal Importance (EEI)', 
+                        'Exactly Equal Unimportant (EEU)'
+                    )
+                    cols[j + 1].write("EEI/EEU")
+                elif i < j:
+                    # Upper triangular - user input
+                    selected_term = cols[j + 1].selectbox(
+                        f"{crit_i} vs {crit_j}",
+                        optimistic_terms,
+                        index=0,
+                        key=f"comp_{i}_{j}",
+                        label_visibility="collapsed"
+                    )
+                    
+                    # Get corresponding pessimistic term
+                    pessimistic_term = df_ahp.get_reciprocal_pessimistic_term(selected_term)
+                    
+                    comparison_matrix[i][j] = df_ahp.linguistic_to_dfn(
+                        selected_term, 
+                        pessimistic_term
+                    )
+                    
+                    # Display the selected terms
+                    short_opt = selected_term.split('(')[1].split(')')[0]
+                    short_pes = pessimistic_term.split('(')[1].split(')')[0]
+                    cols[j + 1].write(f"{short_opt}/{short_pes}")
                 else:
-                    col1, col2 = st.columns(2)
-                    with col1:
-                        st.write(f"**{crit1}** vs **{crit2}**")
+                    # Lower triangular - reciprocal (automatically filled)
+                    reciprocal_optimistic = comparison_matrix[j][i]['O']
+                    reciprocal_pessimistic = comparison_matrix[j][i]['P']
                     
-                    with col2:
-                        optimistic = st.selectbox(
-                            f"Optimistic: {crit1} over {crit2}",
-                            linguistic_terms,
-                            index=0,
-                            key=f"main_opt_{i}_{j}"
-                        )
-                        pessimistic = st.selectbox(
-                            f"Pessimistic: {crit2} over {crit1}",
-                            linguistic_terms,
-                            index=0,
-                            key=f"main_pes_{i}_{j}"
-                        )
+                    # Find the terms for display
+                    opt_term_display = "EEI"
+                    for term, values in df_ahp.optimistic_scale.items():
+                        if values['O'] == reciprocal_optimistic:
+                            opt_term_display = term.split('(')[1].split(')')[0]
+                            break
                     
-                    dfn = df_ahp.linguistic_to_dfn(optimistic, pessimistic)
-                    row_comparisons.append(dfn)
-            
-            main_comparisons.append(row_comparisons)
-        
-        # Sub-criteria comparisons
-        st.subheader("Sub-criteria Comparisons")
-        
-        sub_comparisons_dict = {}
-        for main_crit, sub_crit_list in sub_criteria.items():
-            st.write(f"**{main_crit}** sub-criteria comparisons")
-            
-            sub_comparisons = []
-            for i, sub1 in enumerate(sub_crit_list):
-                row_sub_comparisons = []
-                for j, sub2 in enumerate(sub_crit_list):
-                    if i == j:
-                        dfn = df_ahp.linguistic_to_dfn('EEI', 'EEI')
-                        row_sub_comparisons.append(dfn)
-                    else:
-                        col1, col2 = st.columns(2)
-                        with col1:
-                            st.write(f"**{sub1}** vs **{sub2}**")
-                        
-                        with col2:
-                            optimistic = st.selectbox(
-                                f"Optimistic: {sub1} over {sub2}",
-                                linguistic_terms,
-                                index=0,
-                                key=f"sub_{main_crit}_{i}_{j}"
-                            )
-                            pessimistic = st.selectbox(
-                                f"Pessimistic: {sub2} over {sub1}",
-                                linguistic_terms,
-                                index=0,
-                                key=f"sub_pes_{main_crit}_{i}_{j}"
-                            )
-                        
-                        dfn = df_ahp.linguistic_to_dfn(optimistic, pessimistic)
-                        row_sub_comparisons.append(dfn)
-                
-                sub_comparisons.append(row_sub_comparisons)
-            
-            sub_comparisons_dict[main_crit] = sub_comparisons
+                    pes_term_display = "EEU"
+                    for term, values in df_ahp.pessimistic_scale.items():
+                        if values['P'] == reciprocal_pessimistic:
+                            pes_term_display = term.split('(')[1].split(')')[0]
+                            break
+                    
+                    comparison_matrix[i][j] = {
+                        'O': reciprocal_pessimistic,  # Swap for reciprocal
+                        'P': reciprocal_optimistic   # Swap for reciprocal
+                    }
+                    cols[j + 1].write(f"{opt_term_display}/{pes_term_display}")
         
         if st.button("Calculate Weights"):
-            st.session_state.main_comparisons = main_comparisons
-            st.session_state.sub_comparisons = sub_comparisons_dict
+            st.session_state.comparison_matrix = comparison_matrix
             st.success("Comparisons saved! Proceed to Results.")
     
     elif app_mode == "Results":
         st.header("DF-AHP Results")
         
-        if 'main_comparisons' not in st.session_state:
+        if 'comparison_matrix' not in st.session_state:
             st.warning("Please complete the pairwise comparisons first.")
             return
         
+        criteria = st.session_state.criteria
+        comparison_matrix = st.session_state.comparison_matrix
+        
         # Calculate weights
-        df_ahp = DecomposedFuzzyAHP()
-        main_comparisons = st.session_state.main_comparisons
-        sub_comparisons = st.session_state.sub_comparisons
-        main_criteria = st.session_state.main_criteria
-        sub_criteria = st.session_state.sub_criteria
+        weights = df_ahp.calculate_eigenvector(comparison_matrix)
         
-        # Calculate main criteria weights
-        main_weights = df_ahp.calculate_weights([main_comparisons])[0]
-        
-        # Calculate sub-criteria weights
-        sub_weights_dict = {}
-        for main_crit in main_criteria:
-            if main_crit in sub_comparisons:
-                sub_weights = df_ahp.calculate_weights([sub_comparisons[main_crit]])[0]
-                sub_weights_dict[main_crit] = sub_weights
+        # Calculate consistency ratio
+        cr = df_ahp.calculate_consistency_ratio(comparison_matrix, weights)
         
         # Display results
         col1, col2 = st.columns(2)
         
         with col1:
-            st.subheader("Main Criteria Weights")
-            main_results = []
-            for crit, weight in zip(main_criteria, main_weights):
-                main_results.append({
+            st.subheader("Criteria Weights")
+            results = []
+            for crit, weight in zip(criteria, weights):
+                results.append({
                     'Criterion': crit,
                     'Weight': f"{weight:.4f}",
                     'Percentage': f"{(weight * 100):.2f}%"
                 })
             
-            main_df = pd.DataFrame(main_results)
-            st.dataframe(main_df)
+            results_df = pd.DataFrame(results)
+            st.dataframe(results_df)
             
-            # Visualization
-            st.subheader("Main Criteria Distribution")
-            chart_data = pd.DataFrame({
-                'Criteria': main_criteria,
-                'Weights': main_weights
-            })
-            st.bar_chart(chart_data.set_index('Criteria'))
+            # Consistency information
+            st.subheader("Consistency Check")
+            st.write(f"Consistency Ratio (CR): {cr:.4f}")
+            if cr <= 0.1:
+                st.success("✓ Consistency is acceptable (CR ≤ 0.1)")
+            else:
+                st.warning("⚠ Consistency ratio is high. Consider revising judgments.")
         
         with col2:
-            st.subheader("Sub-criteria Weights")
+            st.subheader("Visualization")
             
-            for main_crit in main_criteria:
-                if main_crit in sub_weights_dict:
-                    st.write(f"**{main_crit}**")
-                    sub_results = []
-                    for sub_crit, weight in zip(sub_criteria[main_crit], sub_weights_dict[main_crit]):
-                        sub_results.append({
-                            'Sub-criterion': sub_crit,
-                            'Weight': f"{weight:.4f}"
-                        })
-                    
-                    sub_df = pd.DataFrame(sub_results)
-                    st.dataframe(sub_df)
+            # Bar chart
+            chart_data = pd.DataFrame({
+                'Criteria': criteria,
+                'Weights': weights
+            })
+            st.bar_chart(chart_data.set_index('Criteria'))
+            
+            # Pie chart
+            fig_data = chart_data.set_index('Criteria')
+            st.write("Weight Distribution:")
+            st.dataframe(fig_data)
         
-        # Final ranking
+        # Ranking
         st.subheader("Final Ranking")
-        final_ranking = []
+        ranking_data = []
+        for i, (crit, weight) in enumerate(zip(criteria, weights)):
+            ranking_data.append({
+                'Rank': i + 1,
+                'Criterion': crit,
+                'Weight': weight,
+                'Percentage': f"{(weight * 100):.2f}%"
+            })
         
-        for i, main_crit in enumerate(main_criteria):
-            main_weight = main_weights[i]
-            if main_crit in sub_weights_dict:
-                for j, sub_crit in enumerate(sub_criteria[main_crit]):
-                    sub_weight = sub_weights_dict[main_crit][j]
-                    global_weight = main_weight * sub_weight
-                    final_ranking.append({
-                        'Criterion': f"{main_crit} - {sub_crit}",
-                        'Global Weight': global_weight
-                    })
+        ranking_df = pd.DataFrame(ranking_data)
+        ranking_df = ranking_df.sort_values('Weight', ascending=False)
+        ranking_df['Rank'] = range(1, len(ranking_df) + 1)
+        ranking_df['Weight'] = ranking_df['Weight'].apply(lambda x: f"{x:.4f}")
         
-        final_df = pd.DataFrame(final_ranking)
-        final_df = final_df.sort_values('Global Weight', ascending=False)
-        final_df['Rank'] = range(1, len(final_df) + 1)
-        final_df['Global Weight'] = final_df['Global Weight'].apply(lambda x: f"{x:.6f}")
-        
-        st.dataframe(final_df[['Rank', 'Criterion', 'Global Weight']])
+        st.dataframe(ranking_df[['Rank', 'Criterion', 'Weight', 'Percentage']])
         
         # Download results
-        csv = final_df.to_csv(index=False)
+        csv = ranking_df.to_csv(index=False)
         st.download_button(
             label="Download Results as CSV",
             data=csv,
             file_name="df_ahp_results.csv",
             mime="text/csv"
         )
+        
+        # Show detailed matrix (optional)
+        with st.expander("Show Detailed Comparison Matrix"):
+            st.write("Decomposed Fuzzy Comparison Matrix:")
+            matrix_display = []
+            for i, crit_i in enumerate(criteria):
+                row = {'Criterion': crit_i}
+                for j, crit_j in enumerate(criteria):
+                    dfn = comparison_matrix[i][j]
+                    row[f"{crit_j}"] = f"O{dfn['O']}, P{dfn['P']}"
+                matrix_display.append(row)
+            
+            st.dataframe(pd.DataFrame(matrix_display))
 
 if __name__ == "__main__":
     main()
